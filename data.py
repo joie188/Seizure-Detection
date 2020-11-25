@@ -19,9 +19,15 @@ def read_csv(csv_filename):
     features['median'] = data.median(axis=1) 
     #features['mode'] = data.mode(axis=1) 
     features['std'] = data.std(axis=1)
+
     # line length 
+    
+
     # entropy 
-    # energy
+
+    # energy 
+    features['energy'] = data.sum(data**2, axis=1)
+
     # peak frequency
 
     return features
