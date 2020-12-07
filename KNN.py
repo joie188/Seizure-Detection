@@ -59,8 +59,8 @@ class KNN:
 
     def find_top_neighbor(self, dists):
         top_distances = np.sort(dists)[:, :self.K]
-        neighbor_labels = self.trainY.squeeze()[np.argsort(dists)[:, :self.K]]
-        return top_distances, neighbor_labels
+        top_labels = self.trainY.squeeze()[np.argsort(dists)[:, :self.K]]
+        return top_distances, top_labels
     
     def predict(self, testX):
         """
