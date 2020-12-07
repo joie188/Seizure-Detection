@@ -4,9 +4,9 @@ import numpy as np
 from scipy.fft import fft
 from scipy import signal
 
-def read_csv(csv_filename):
+def read_csv(csv_path):
     # read data file
-    data = pd.read_csv('./data/' + csv_filename)
+    data = pd.read_csv(csv_path)
 
     # remove unnecessary columns
     # data.drop(data.columns[0], axis=1, inplace=True)
@@ -101,7 +101,14 @@ def sampen(L, m, r):
     # Return SampEn
     return -np.log(A / B)
 
+def split_train_val_test(train=0.8, val=0.1):
+    data = pd.read_csv('./data/featurize_data.csv')
+    shuffled = np.random.RandomState(0).permutation(data.index)
+    n_train = int(len(shuffled) * train)
+    n_val = int(len(shuffled) * val)
+    i_train, i_val, i_test = shuffled[:n_train], shuffled[n_train: n_train + n_val], shuffled[-n_val:]
+    return data.iloc[i_train], data.iloc[i_val], data.iloc[i_test]
 
-data = read_csv("data.csv")
+data = read_csv("./data/data.csv")
 data = extract_features(data)
 print(data)
