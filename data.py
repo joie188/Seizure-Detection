@@ -2,63 +2,78 @@ import pandas as pd
 import matplotlib.pyplot as plt 
 import numpy as np
 from scipy.fft import fft
+from scipy import signal
 
 def read_csv(csv_filename):
     # read data file
-    data = pd.read_csv(csv_filename)
+    data = pd.read_csv('./data/' + csv_filename)
 
     # remove unnecessary columns
     # data.drop(data.columns[0], axis=1, inplace=True)
 
+    return data
+
+def extract_features(data):
     # assign binary label 
     #data['label'] = (data.y == 1).astype(int)
     
     data_np = data.to_numpy()
     data_np = data_np[:, 1:-1].astype(float)
-    #print(data_np)
 
-    # FEATURES
     features = pd.DataFrame()
-    # features['min'] = np.min(data_np, axis=1)
-    # features['max'] = np.max(data_np, axis=1)
-    # features['mean'] = np.mean(data_np, axis=1) 
-    # features['median'] = np.median(data_np, axis=1) 
-    # features['std'] = np.std(data_np, axis=1)
 
-    # # line length 
-    # L = data_np[:,1:] - data_np[:,:-1]
-    # L = np.sum(np.abs(L), axis=1)
-    # features['line_length'] = L
+    #TIME DOMAIN
+
+    features['min'] = np.min(data_np, axis=1)
+    features['max'] = np.max(data_np, axis=1)
+    features['mean'] = np.mean(data_np, axis=1) 
+    features['median'] = np.median(data_np, axis=1) 
+    features['std'] = np.std(data_np, axis=1)
+
+    # line length 
+    L = data_np[:,1:] - data_np[:,:-1]
+    L = np.sum(np.abs(L), axis=1)
+    features['line_length'] = L
+
+
+    #FREQUENCY DOMAIN 
 
     # entropy = []
     # for row in range(10):
     #     r = data_np[row,:]
     #     #entropy.append(ent.sample_entropy(r, 2, 0.2 * np.std(r)))
     #     entropy.append(sampen(r, 2, 0.2*np.std(r)))
-    # print(entropy)
     # features['entropy'] = entropy
 
-    # # energy 
-    # features['energy'] = np.sum(data_np**2, axis=1)
+    # energy 
+    features['energy'] = np.sum(data_np**2, axis=1)
 
-    # peak frequency
-    x = fft(data_np)
-    x = np.absolute(x)
+    # #peak frequency
+    # x = fft(data_np)
+    # x = np.absolute(x)
     
-    coeff = np.argmax(x, axis=1)
-    features['peak_f'] = coeff
+    # coeff = np.argmax(x, axis=1)
+    # features['peak_f'] = coeff
 
-    median_fs = []
-    for row in x:
-        total_sum = np.sum(row)
-        running_sum = 0 
-        for i in range(len(row)):
-            running_sum += row[i] 
-            if running_sum >= total_sum/2:
-                break 
-        median_fs.append(i)
-    features["median_f"] = median_fs
+    # median_fs = []
+    # for row in x:
+    #     total_sum = np.sum(row)
+    #     running_sum = 0 
+    #     for i in range(len(row)):
+    #         running_sum += row[i] 
+    #         if running_sum >= total_sum/2:
+    #             break 
+    #     median_fs.append(i)
+    # features["median_f"] = median_fs
 
+    # TIME AND FREQUENCY DOMAIN (CWT)
+    width = np.arange(.01,.1,.01) * len(data_np[0])
+    for row in data_np:
+        cwt = signal.cwt(row, signal.ricker, width)
+        energy = np.sum(cwt**2, axis=1)
+        print(cwt.shape)
+        print(energy)
+        break
 
     return features
 
@@ -87,5 +102,6 @@ def sampen(L, m, r):
     return -np.log(A / B)
 
 
-data = read_csv("./data.csv")
+data = read_csv("data.csv")
+data = extract_features(data)
 print(data)
