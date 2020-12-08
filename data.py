@@ -1,8 +1,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt 
 import numpy as np
-from scipy.fft import fft
+import os
 from scipy import signal
+from scipy.fft import fft
+from sklearn.preprocessing import MinMaxScaler
 
 def read_csv(csv_path):
     # read data file
@@ -11,27 +13,29 @@ def read_csv(csv_path):
     data.drop(data.columns[0], axis=1, inplace=True)
     return data
 
-def plot_raw_data(data):
-    data = data.to_numpy()
+def normalize(data):
+    # train the normalization
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    scaler = scaler.fit(data)
+    normalized = scaler.transform(data)
+    return normalized
+
+def plot_data(data):
     data = data[1:, :]
     data = data[:, :-1]
+    # Take random 100 data points
     subset = data[np.random.choice(data.shape[0], 100, replace=False)]
-    print(subset)
     plt.plot(subset.T)
     plt.ylabel("Voltage (mV)")
     plt.xlabel("Time (s)")
     plt.title("EEG Recording")
     plt.show()
 
-def extract_features(data):
-    # assign binary label 
-    #data['label'] = (data.y == 1).astype(int)
-    
-    data_np = data.to_numpy()
-    data_np = data_np[:, 1:-1].astype(float)
+def extract_features(data_np):
+    #data_np = data.to_numpy()
+    #data_np = data[:, 1:-1].astype(float)
 
     features = pd.DataFrame()
-
     #TIME DOMAIN
 
     features['min'] = np.min(data_np, axis=1)
@@ -48,44 +52,76 @@ def extract_features(data):
 
     #FREQUENCY DOMAIN 
 
-    # entropy = []
-    # for row in range(10):
-    #     r = data_np[row,:]
-    #     #entropy.append(ent.sample_entropy(r, 2, 0.2 * np.std(r)))
-    #     entropy.append(sampen(r, 2, 0.2*np.std(r)))
-    # features['entropy'] = entropy
+    entropy = []
+    for r in data_np:
+        #entropy.append(ent.sample_entropy(r, 2, 0.2 * np.std(r)))
+        entropy.append(sampen(r, 2, 0.2*np.std(r)))
+    features['entropy'] = entropy
 
     # energy 
     features['energy'] = np.sum(data_np**2, axis=1)
 
-    # #peak frequency
-    # x = fft(data_np)
-    # x = np.absolute(x)
+    #peak frequency
+    x = fft(data_np)
+    x = np.absolute(x)
     
-    # coeff = np.argmax(x, axis=1)
-    # features['peak_f'] = coeff
+    coeff = np.argmax(x, axis=1)
+    features['peak_f'] = coeff
 
-    # median_fs = []
-    # for row in x:
-    #     total_sum = np.sum(row)
-    #     running_sum = 0 
-    #     for i in range(len(row)):
-    #         running_sum += row[i] 
-    #         if running_sum >= total_sum/2:
-    #             break 
-    #     median_fs.append(i)
-    # features["median_f"] = median_fs
+    median_fs = []
+    for row in x:
+        total_sum = np.sum(row)
+        running_sum = 0 
+        for i in range(len(row)):
+            running_sum += row[i] 
+            if running_sum >= total_sum/2:
+                break 
+        median_fs.append(i)
+    features["median_f"] = median_fs
 
     # TIME AND FREQUENCY DOMAIN (CWT)
     width = np.arange(.01,.1,.01) * len(data_np[0])
+    print(width)
+    all_cwt_energy = [[] for _ in range(len(width))]
+    all_cwt_entropy = [[] for _ in range(len(width))]
     for row in data_np:
         cwt = signal.cwt(row, signal.ricker, width)
         energy = np.sum(cwt**2, axis=1)
-        print(cwt.shape)
-        print(energy)
-        break
+        # print(cwt.shape)
+        # print(energy)
+        for i in range(len(energy)):
+            all_cwt_energy[i].append(energy[i])
+
+        entropy = cwt_en(cwt)
+        for i in range(len(entropy)):
+            all_cwt_entropy[i].append(entropy[i])
+
+        # total_energy = np.sum(cwt**2)
+        # print(total_energy)
+        # features[cwt_energy] = total_energy
+        # break
+    
+    energy_name = 'cwt_energy_band'
+    for i in range(len(all_cwt_energy)):
+        features[energy_name+str(i)] = np.array(all_cwt_energy[i])
+    
+    entropy_name = 'cwt_entropy_band'
+    for i in range(len(all_cwt_entropy)):
+        features[entropy_name+str(i)] = np.array(all_cwt_entropy[i])
 
     return features
+
+def cwt_en(cwt):
+    amps = cwt**2 
+    totals = np.sum(amps, axis=1)
+    all_entropy = []
+    for band in range(amps.shape[0]):
+        entropy = 0
+        for i in range(amps.shape[1]):
+            fraction = amps[band][i] / totals[band]
+            entropy += -fraction*np.log(fraction)
+        all_entropy.append(entropy)
+    return all_entropy
 
 def sampen(L, m, r):
     N = len(L)
@@ -99,8 +135,8 @@ def sampen(L, m, r):
     # Save all matches minus the self-match, compute B
     B = np.sum([np.sum(np.abs(xmii - xmj).max(axis=1) <= r) - 1 for xmii in xmi])
     
-    print(xmi[0].shape)
-    print("Help:", np.shape(np.abs(xmi[0] - xmj).max(axis=1)))
+    # print(xmi[0].shape)
+    # print("Help:", np.shape(np.abs(xmi[0] - xmj).max(axis=1)))
 
     # Similar for computing A
     m += 1
@@ -120,6 +156,11 @@ def split_train_val_test(train=0.8, val=0.1):
     return data.iloc[i_train], data.iloc[i_val], data.iloc[i_test]
 
 data = read_csv("./data/data.csv")
-#data = extract_features(data)
-data = plot_raw_data(data)
-#print(data)
+labels = (data['y'] == 1).astype(int)
+data.drop(data.columns[-1], axis=1, inplace=True)
+data = normalize(data)
+print(data)
+features = extract_features(data)
+features['label'] = labels
+print(features)
+features.to_csv(r'./data/featurize_data.csv', index = False, header=True)
