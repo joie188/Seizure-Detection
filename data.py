@@ -1,8 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt 
 import numpy as np
-from scipy.fft import fft
 from scipy import signal
+from scipy.fft import fft
 
 def read_csv(csv_path):
     # read data file
@@ -38,12 +38,14 @@ def extract_features(data):
 
     #FREQUENCY DOMAIN 
 
-    # entropy = []
+    entropy = []
     # for row in range(10):
     #     r = data_np[row,:]
-    #     #entropy.append(ent.sample_entropy(r, 2, 0.2 * np.std(r)))
-    #     entropy.append(sampen(r, 2, 0.2*np.std(r)))
-    # features['entropy'] = entropy
+    for r in data_np:
+        #entropy.append(ent.sample_entropy(r, 2, 0.2 * np.std(r)))
+        entropy.append(sampen(r, 2, 0.2*np.std(r)))
+        # print(entropy)
+    features['entropy'] = entropy
 
     # energy 
     features['energy'] = np.sum(data_np**2, axis=1)
@@ -68,14 +70,46 @@ def extract_features(data):
 
     # TIME AND FREQUENCY DOMAIN (CWT)
     width = np.arange(.01,.1,.01) * len(data_np[0])
+    all_cwt_energy = [[] for _ in range(len(width))]
+    all_cwt_entropy = [[] for _ in range(len(width))]
     for row in data_np:
         cwt = signal.cwt(row, signal.ricker, width)
         energy = np.sum(cwt**2, axis=1)
-        print(cwt.shape)
-        print(energy)
-        break
+        # print(cwt.shape)
+        # print(energy)
+        for i in range(len(energy)):
+            all_cwt_energy[i].append(energy[i])
+
+        entropy = cwt_en(cwt)
+        for i in range(len(entropy)):
+            all_cwt_entropy[i].append(entropy[i])
+
+        # total_energy = np.sum(cwt**2)
+        # print(total_energy)
+        # features[cwt_energy] = total_energy
+        # break
+    
+    energy_name = 'cwt_energy_band'
+    for i in range(len(all_cwt_energy)):
+        features[energy_name+str(i)] = np.array(all_cwt_energy[i])
+    
+    entropy_name = 'cwt_entropy_band'
+    for i in range(len(all_cwt_entropy)):
+        features[entropy_name+str(i)] = np.array(all_cwt_entropy[i])
 
     return features
+
+def cwt_en(cwt):
+    amps = cwt**2 
+    totals = np.sum(amps, axis=1)
+    all_entropy = []
+    for band in range(amps.shape[0]):
+        entropy = 0
+        for i in range(amps.shape[1]):
+            fraction = amps[band][i] / totals[band]
+            entropy += -fraction*np.log(fraction)
+        all_entropy.append(entropy)
+    return all_entropy
 
 def sampen(L, m, r):
     N = len(L)
@@ -89,8 +123,8 @@ def sampen(L, m, r):
     # Save all matches minus the self-match, compute B
     B = np.sum([np.sum(np.abs(xmii - xmj).max(axis=1) <= r) - 1 for xmii in xmi])
     
-    print(xmi[0].shape)
-    print("Help:", np.shape(np.abs(xmi[0] - xmj).max(axis=1)))
+    # print(xmi[0].shape)
+    # print("Help:", np.shape(np.abs(xmi[0] - xmj).max(axis=1)))
 
     # Similar for computing A
     m += 1
