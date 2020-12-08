@@ -7,11 +7,21 @@ from scipy import signal
 def read_csv(csv_path):
     # read data file
     data = pd.read_csv(csv_path)
-
     # remove unnecessary columns
-    # data.drop(data.columns[0], axis=1, inplace=True)
-
+    data.drop(data.columns[0], axis=1, inplace=True)
     return data
+
+def plot_raw_data(data):
+    data = data.to_numpy()
+    data = data[1:, :]
+    data = data[:, :-1]
+    subset = data[np.random.choice(data.shape[0], 100, replace=False)]
+    print(subset)
+    plt.plot(subset.T)
+    plt.ylabel("Voltage (mV)")
+    plt.xlabel("Time (s)")
+    plt.title("EEG Recording")
+    plt.show()
 
 def extract_features(data):
     # assign binary label 
@@ -110,5 +120,6 @@ def split_train_val_test(train=0.8, val=0.1):
     return data.iloc[i_train], data.iloc[i_val], data.iloc[i_test]
 
 data = read_csv("./data/data.csv")
-data = extract_features(data)
-print(data)
+#data = extract_features(data)
+data = plot_raw_data(data)
+#print(data)
