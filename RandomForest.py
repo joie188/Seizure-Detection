@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import math
 import random
 
@@ -12,7 +13,12 @@ class Node:
         self.right = None
 
 class RandomForest:
-    def __init__(self, num_trees, min_samples_leaf, trainX, trainY, samples_per_tree=None, features_per_tree=None, ):
+    def __init__(self, num_trees, min_samples_leaf, trainX, trainY, samples_per_tree=None, features_per_tree=None, features_to_train_on = None):
+        '''
+        samples_per_tree is the number of samples (with replacement) used to construct each tree
+        features_per_tree is the number of features to consider when making splits in each tree
+        features_to_train_on is a list of indices that correspond to features, if None: all features are used
+        '''
         self.num_trees = num_trees
         self.min_samples_leaf = min_samples_leaf
         self.trainX = trainX
@@ -25,9 +31,14 @@ class RandomForest:
             self.samples_per_tree = samples_per_tree
 
         if features_per_tree is None:
-            self.features_per_tree = math.sqrt(trainX.shape[1])
+            self.features_per_tree = int(math.sqrt(trainX.shape[1]))
         else:
             self.features_per_tree = features_per_tree
+        
+        if features_to_train_on is None:
+            self.features_to_train_on = np.arange(trainX.shape[1])
+        else:
+            self.features_to_train_on = features_to_train_on
     
     def build_tree(self, data_indices, features):
         best_feature, best_val, best_left, best_right = self.best_split(data_indices, features)
@@ -38,14 +49,14 @@ class RandomForest:
         root.right = self.build_tree(best_right, features)
         return root
 
-    def train(self, sample_weights):
+    def train(self, sample_weights=None):
         self.trees = []
         for _ in range(self.num_trees):
             #randomly sample from X with replacement
             samples_indices = np.random.choice(self.trainX.shape[0], size=self.samples_per_tree, replace=True)
 
             #randomly choose features to consider
-            features = np.random.choice(self.trainX.shape[1], size=self.features_per_tree, replace=False)
+            features = np.random.choice(self.features_to_train_on, size=self.features_per_tree, replace=False)
 
             tree = self.build_tree(samples_indices, features)
 
@@ -61,7 +72,7 @@ class RandomForest:
             if predict_proba[0] > predict_proba[1]:
                 predictions[i] = 1
             else:
-                predictions[i] = 0
+                predictions[i] = -1
         return predictions
 
     def predict_proba_ensemble(self, x):
@@ -146,3 +157,19 @@ class RandomForest:
             split_score += (1.0 - positive_class_count/len(split)) ** 2
             gini += float(len(split))/float(num_samples) * (1.0 - split_score) 
         return gini
+
+    def score(self, testX, testY):
+        return np.sum(self.predict(testX) == testY) / testX.shape[0]
+
+if __name__ == "__main__": 
+    train = pd.read_csv('data/train_data.csv').values
+    X_train = train[:, :-1].copy()
+    Y_train = train[:, -1].copy()
+
+    validate = pd.read_csv('data/val_data.csv').values
+    X_val = validate[:, :-1].copy()
+    y_val = validate[:, -1].copy()
+
+    classifier = RandomForest(50, 50, X_train, Y_train, samples_per_tree=1000)
+    classifier.train()
+    print(classifier.score(X_val, y_val))
