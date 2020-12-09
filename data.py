@@ -156,7 +156,8 @@ def split_train_val_test(train=0.8, val=0.1):
     return data.iloc[i_train], data.iloc[i_val], data.iloc[i_test]
 
 data = read_csv("./data/data.csv")
-labels = (data['y'] == 1).astype(int)
+#labels = (data['y'] == 1).astype(int)
+labels = np.where(data['y']==1, 1, -1)
 data.drop(data.columns[-1], axis=1, inplace=True)
 data = normalize(data)
 print(data)
@@ -164,3 +165,7 @@ features = extract_features(data)
 features['label'] = labels
 print(features)
 features.to_csv(r'./data/featurize_data.csv', index = False, header=True)
+train, val, test = split_train_val_test()
+train.to_csv(r'./data/train_data.csv', index = False, header=False)
+val.to_csv(r'./data/val_data.csv', index = False, header=True)
+test.to_csv(r'./data/test_data.csv', index = False, header=True)

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from cvxopt import solvers
 solvers.options['show_progress'] = False
 from cvxopt import matrix
@@ -46,8 +47,6 @@ def train_kernel_svm(X, y, k=None, C=1):
     w: weight, shape (N,)
     b: bias, scalar
     """
-    C_pos = 0.99*C  
-    C_neg = 0.01*C 
 
     N = len(y)
     if callable(k):
@@ -61,15 +60,18 @@ def train_kernel_svm(X, y, k=None, C=1):
     q = -np.ones(N)
 
     G = np.concatenate((np.eye(N), -np.eye(N)))
-    #h = np.concatenate((C * np.ones(N), np.zeros(N)))
-
+    # h = np.concatenate((C * np.ones(N), np.zeros(N)))
+    
     pos = np.where(y == 1)
-    neg = np.where(y == -1)
+    neg = np.where(y != 1)
+    C_pos = (np.count_nonzero(y == 1)/N)*C  
+    C_neg = (np.count_nonzero(y != 1)/N)*C 
+
     y_C = np.zeros(N)
     y_C[pos] = C_pos 
     y_C[neg] = C_neg 
     h = np.concatenate((y_C, np.zeros(N)))
-
+    
     A = y.reshape(1, N)
     A = A.astype('float')
     b = np.zeros(1)
@@ -79,17 +81,16 @@ def train_kernel_svm(X, y, k=None, C=1):
     alpha[alpha < 1e-4] = 0
     alpha = alpha.reshape(-1)
     
-    #is_support_vector = (0 < alpha) & (alpha < C)
+    # is_support_vector = (0 < alpha) & (alpha < C)
 
     is_support_vector = []
     for i in range(len(alpha)):
+        value = False
         if alpha[i] > 0:
             if y[i] == -1:
-                value = alpha[i] < C_neg
+                value = abs(alpha[i] - C_neg) <= 0.001
             elif y[i] == 1:
-                value = alpha[i] < C_pos 
-        else:
-            value = False 
+                value = abs(alpha[i] - C_pos) <= 0.001 
         is_support_vector.append(value)
 
     y_sv = y[is_support_vector]
@@ -119,28 +120,29 @@ def kernel_rbf(X1, X2, gamma):
     
     # broadcasting trick
     return np.exp(-gamma * np.sum((X1 - X2) ** 2, axis=2))
-ker_rbf = lambda X1, X2: ker_rbf(X1, X2, gamma=1)
-
+ker_rbf = lambda X1, X2: kernel_rbf(X1, X2, gamma=1)
 
 def run_kernel_svm(ker=ker_linear, C=1):
-    train = np.loadtxt('data/data_train.csv')
-    X_train = train[:, 0:2].copy()
-    y_train = train[:, 2].copy()
+    #train = np.loadtxt('data/train_data.csv')
+    train = pd.read_csv('data/val_data.csv').values
+    X_train = train[:, :-1].copy()
+    y_train = train[:, -1].copy()
 
     alpha, b = train_kernel_svm(X_train, y_train, k=ker, C=C)
     pred_kernel_svm = get_pred_kernel_svm(alpha, b, X_train, y_train, ker)
 
     preds = np.array([pred_kernel_svm(x) for x in X_train])
+    print(preds)
     print('Training error', (preds * y_train <= 0).mean())
-    plot_decision_boundary(X_train, y_train, pred_kernel_svm, title='SVM Train')
+    # plot_decision_boundary(X_train, y_train, pred_kernel_svm, title='SVM Train')
 
-    validate = np.loadtxt('data/validate_train.csv')
-    X_val = validate[:, 0:2]
-    y_val = validate[:, 2]
+    # validate = np.loadtxt('data/validate_train.csv')
+    # X_val = validate[:, 0:2]
+    # y_val = validate[:, 2]
     
-    preds = np.array([pred_kernel_svm(x) for x in X_val])
-    print('Validation error', (preds * y_val <= 0).mean())
-    #plot_decision_boundary(X_val, y_val, pred_kernel_svm, title='SVM Validation')
+    # preds = np.array([pred_kernel_svm(x) for x in X_val])
+    # print('Validation error', (preds * y_val <= 0).mean())
+    # #plot_decision_boundary(X_val, y_val, pred_kernel_svm, title='SVM Validation')
 
 
 if __name__ == "__main__": 
