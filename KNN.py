@@ -1,15 +1,16 @@
 import math 
 import numpy as np
+import pandas as pd
 
 def euclidean_distance(A, B):
-    return np.sum([pow(a - b, 2) for (a, b) in zip(A, B)])**0.5
+    return np.sqrt(np.sum((A - B)**2, axis=0))  
 
 def chi_squared_distance(A, B):
     return 0.5 * np.sum([((a - b) ** 2) / (a + b)  
-                      for (a, b) in zip(A, B)]) 
+                      for (a, b) in zip(A, B)], axis=0) 
 
 def city_block_distance(A, B):
-    return np.sum([abs(a - b) for (a, b) in zip(A, B)]) 
+    return np.sum([abs(a - b) for (a, b) in zip(A, B)], axis=0) 
 
 class KNN:
     def __init__(self, K, distance_metric, trainX, trainY):
@@ -23,7 +24,7 @@ class KNN:
         self.trainX = trainX
         self.trainY = trainY
         self.pos_size = np.count_nonzero(self.trainY == 1)
-        self.neg_size = self.trainY.shape[1] - self.pos_size
+        self.neg_size = np.count_nonzero(self.trainY == -1)
         self.K = K
         self.metric = distance_metric
     
@@ -38,7 +39,7 @@ class KNN:
         for i in range(testX.shape[1]):
             row = self.metric(self.trainX, testX[:, i:i+1])
             for j in range(len(row)):
-                if self.trainY[:,j] == 1:
+                if self.trainY[j] == 1:
                     row[j] = row[j] / self.pos_size
                 else:
                     row[j] = row[j] / self.neg_size
@@ -95,14 +96,21 @@ class KNN:
         Returns:
             the accuracy of the KNN predictions across the test set
         """
-        score = np.sum(self.predict(testX) == testY) / testY.shape[1]
+        score = np.sum(self.predict(testX) == testY) / testX.shape[1]
         return score
 
 
 if __name__ == "__main__": 
-    distance = euclidean_distance
+    distance = chi_squared_distance
     k = 5
 
-    # train = np.loadtxt('data/data_train.csv')
-    # X_train = train[:, 0:2].copy()
-    # y_train = train[:, 2].copy()
+    train = pd.read_csv('data/train_data.csv').values
+    X_train = train[:, :-1].copy()
+    y_train = train[:, -1].copy()
+
+    validate = pd.read_csv('data/val_data.csv').values
+    X_val = validate[:, :-1].copy()
+    y_val = validate[:, -1].copy()
+
+    classifier = KNN(k, distance, X_train.T, y_train)
+    print(classifier.score(X_val.T, y_val))
