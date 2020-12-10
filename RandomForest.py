@@ -3,6 +3,7 @@ import pandas as pd
 import math
 import random
 from sklearn.ensemble import RandomForestClassifier
+from collections import Counter
 
 class Node:
     def __init__(self, feature, value, num_samples_seizure, num_samples_noseizure):
@@ -25,8 +26,10 @@ class RandomForest:
         self.trainX = trainX
         self.trainY = trainY
         self.pos_size = np.count_nonzero(self.trainY == 1)
-        self.neg_size = np.count_nonzero(self.trainY == -1)
+        self.neg_size = np.count_nonzero(self.trainY == 0)
         self.trees = []
+        self.features_used = []
+        self.feature_decrease_gini = {}
 
         if samples_per_tree is None:
             self.samples_per_tree = trainX.shape[0]
@@ -43,13 +46,13 @@ class RandomForest:
         else:
             self.features_to_train_on = features_to_train_on
     
-    def build_tree(self, data_indices, features, weights):
-        best_feature, best_val, best_left, best_right = self.best_split(data_indices, features, weights)
+    def build_tree(self, data_indices, features, weights, gini):
+        best_feature, best_val, best_left, best_right, best_gini = self.best_split(data_indices, features, weights, gini)
         if best_feature is None:
             return None
         root = Node(best_feature, best_val, np.count_nonzero(self.trainY[data_indices] == 1), len(data_indices) - np.count_nonzero(self.trainY[data_indices] == 1))
-        root.left = self.build_tree(best_left, features, weights)
-        root.right = self.build_tree(best_right, features, weights)
+        root.left = self.build_tree(best_left, features, weights, best_gini)
+        root.right = self.build_tree(best_right, features, weights, best_gini)
         return root
 
     def train(self):
@@ -60,12 +63,14 @@ class RandomForest:
 
             #randomly choose features to consider
             features = np.random.choice(self.features_to_train_on, size=self.features_per_tree, replace=False)
-
+            self.features_used.append(features)
             positive_class_count = np.count_nonzero(self.trainY[samples_indices] == 1)
             negative_class_count = self.samples_per_tree - positive_class_count
 
-            tree = self.build_tree(samples_indices, features, (1.0 / positive_class_count, 1.0 / negative_class_count))
+            initial_gini = self.gini_score([samples_indices], (1.0 / positive_class_count, 1.0 / negative_class_count))
 
+            tree = self.build_tree(samples_indices, features, (1.0 / positive_class_count, 1.0 / negative_class_count), initial_gini)
+            
             self.trees.append(tree)
 
     def predict(self, testX):
@@ -78,7 +83,7 @@ class RandomForest:
             if predict_proba[0] > predict_proba[1]:
                 predictions[i] = 1
             else:
-                predictions[i] = -1
+                predictions[i] = 0
         return predictions
 
     def predict_proba_ensemble(self, x):
@@ -120,7 +125,7 @@ class RandomForest:
                 right.append(row_index)
         return left, right
     
-    def best_split(self, data, features, weights):
+    def best_split(self, data, features, weights, prev_gini):
         best_score = 2**31-1
         best_feature, best_val, best_left, best_right = None, None, None, None
         for index in features:
@@ -128,7 +133,11 @@ class RandomForest:
             if score < best_score:
                 best_score = score
                 best_feature, best_val, best_left, best_right = feature, val, left, right
-        return best_feature, best_val, best_left, best_right
+        if best_feature in self.feature_decrease_gini:
+            self.feature_decrease_gini[best_feature] += (prev_gini - best_score)
+        else:
+            self.feature_decrease_gini[best_feature] = (prev_gini - best_score)
+        return best_feature, best_val, best_left, best_right, best_score
 
     def find_split(self, data, feature, weights):
         best_score = 2**31-1
@@ -156,13 +165,13 @@ class RandomForest:
         all_samples = [index for split in splits for index in split]
         positive_class_weight = weights[0]
         negative_class_weight = weights[1]
-        t_p = positive_class_weight * np.count_nonzero(self.trainY[all_samples] == 1) + negative_class_weight * np.count_nonzero(self.trainY[all_samples] == -1)
+        t_p = positive_class_weight * np.count_nonzero(self.trainY[all_samples] == 1) + negative_class_weight * np.count_nonzero(self.trainY[all_samples] == 0)
         for split in splits:
             if len(split) == 0:
                 continue
             split_score = 0
             positive_class_count = np.count_nonzero(self.trainY[split] == 1) #seizure
-            negative_class_count = np.count_nonzero(self.trainY[split] == -1) 
+            negative_class_count = np.count_nonzero(self.trainY[split] == 0) 
             t_c = positive_class_weight * positive_class_count + negative_class_weight * negative_class_count
             split_score += (positive_class_weight * positive_class_count/t_c) ** 2
             split_score += (negative_class_weight * negative_class_count/t_c) ** 2
@@ -170,49 +179,70 @@ class RandomForest:
         return gini
 
     def score(self, testX, testY):
-        return np.sum(self.predict(testX) == testY) / testX.shape[0]
+        from sklearn.metrics import precision_score
+        from sklearn.metrics import recall_score
+
+        pred = self.predict(testX)
+        print("Precision:", precision_score(testY, pred, average='binary'))
+        print("Recall:", recall_score(testY, pred, average='binary'))
+        return np.sum(pred == testY) / testX.shape[0]
 
 if __name__ == "__main__": 
     train = pd.read_csv('data/train_data.csv').values
     X_train = train[:, :-1].copy()
     Y_train = train[:, -1].copy()
+    Y_train[Y_train==-1] = 0
 
     validate = pd.read_csv('data/val_data.csv').values
     X_val = validate[:, :-1].copy()
     y_val = validate[:, -1].copy()
+    y_val[y_val==-1] = 0
 
-    num_trees = [10, 50, 100]
-    num_samples_leaf = [10, 50, 100]
+    test = pd.read_csv('data/test_data.csv')
+    X_test = test.values[:, :-1].copy()
+    y_test = test.values[:, -1].copy()
+    y_test[y_test==-1] = 0
 
-    for num_tree in num_trees:
-        for num_sample in num_samples_leaf:
-            classifier = RandomForestClassifier(n_estimators=num_tree, min_samples_leaf=num_sample, max_samples=500,class_weight="balanced_subsample")
-            classifier.fit(X_train, Y_train)
-            #classifier = RandomForest(num_tree, num_sample, X_train, Y_train, samples_per_tree=500)
-            #classifier.train()
-            print(num_tree, num_sample)
-            print(classifier.score(X_train, Y_train))
-            print(classifier.score(X_val, y_val))
+    classifier = RandomForest(100, 50, X_train, Y_train, samples_per_tree=500)
+    classifier.train()
+    flatten_features = [feature for feature_list in classifier.features_used for feature in feature_list]
+    features_used_freq = Counter(flatten_features)
+    feature_freq = {}
+    for tree in classifier.trees:
+        def traverse_tree(tree):
+            if tree is not None:
+                if tree.feature in feature_freq:
+                    feature_freq[tree.feature] += 1
+                else:
+                    feature_freq[tree.feature] = 1
+                traverse_tree(tree.left)
+                traverse_tree(tree.right)
+        traverse_tree(tree)
+    feature_to_ratio = {}
+    feature_to_gini_decrease = {}
+    for key in feature_freq:
+        feature_to_ratio[key] = float(feature_freq[key]) / features_used_freq[key]
+        feature_to_gini_decrease[key] = classifier.feature_decrease_gini[key] / features_used_freq[key]
+    print(dict(sorted(feature_to_ratio.items(), key=lambda item: item[1])))
+    print(dict(sorted(feature_to_gini_decrease.items(), key=lambda item: item[1])))
 
-    # def traverse_tree(tree):
-    #     if tree is not None:
-    #         print(tree.feature)
-    #         traverse_tree(tree.left)
-    #         traverse_tree(tree.right)
+    #4, 13, 5, 17, 11, 14, 12, 10, 1, 0
 
-    # classifier = RandomForest(10, 50, X_train, Y_train, samples_per_tree=1000)
-    # classifier.train()
-    # for tree in classifier.trees:
-    #     print('new tree')
-    #     traverse_tree(tree)
+    #4, 13, 14, 7, 15, 12, 5, 10, 1, 11
 
-    # for num_tree in [50, 100]:
-    #     num_samples_leaf = [10, 25, 50]
-    #     if num_tree == 50:
-    #         num_samples_leaf = [50]
-    #     for num_samp in num_samples_leaf:
-    #         classifier = RandomForest(num_tree, num_samp, X_train, Y_train, samples_per_tree=1000)
+    # num_trees = [10, 50, 100]
+    # num_samples_leaf = [10, 50, 25]
+    # classifier = RandomForest(10, 10, X_train, Y_train, 500)
+    # print(classifier.features_per_tree)
+
+    # for num_tree in [50]:
+    #     for num_sample in [50]:
+    #         #classifier = RandomForestClassifier(n_estimators=num_tree, min_samples_leaf=num_sample, max_samples=500,class_weight="balanced_subsample")
+    #         #classifier.fit(X_train, Y_train)
+    #         classifier = RandomForest(num_tree, num_sample, X_train, Y_train, samples_per_tree=500)
     #         classifier.train()
-    #         print(num_tree, num_samp)
-    #         print("Train: ", classifier.score(X_train, Y_train))
-    #         print("Val: ", classifier.score(X_val, y_val))
+    #         print(classifier.score(X_train, Y_train))
+    #         print(classifier.score(X_val, y_val))
+    #         print(classifier.score(X_test, y_test))
+
+
