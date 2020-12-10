@@ -23,6 +23,8 @@ class RandomForest:
         self.min_samples_leaf = min_samples_leaf
         self.trainX = trainX
         self.trainY = trainY
+        self.pos_size = np.count_nonzero(self.trainY == 1)
+        self.neg_size = np.count_nonzero(self.trainY == -1)
         self.trees = []
 
         if samples_per_tree is None:
@@ -49,7 +51,7 @@ class RandomForest:
         root.right = self.build_tree(best_right, features)
         return root
 
-    def train(self, sample_weights=None):
+    def train(self):
         self.trees = []
         for _ in range(self.num_trees):
             #randomly sample from X with replacement
@@ -69,6 +71,8 @@ class RandomForest:
         predictions = np.zeros(testX.shape[0])
         for i in range(testX.shape[0]):
             predict_proba = self.predict_proba_ensemble(testX[i])
+            seizure_weight = 1 / float(self.pos_size)
+            noseizure_weight = 1 / float(self.neg_size)
             if predict_proba[0] > predict_proba[1]:
                 predictions[i] = 1
             else:
@@ -79,29 +83,29 @@ class RandomForest:
         '''
         returns mean (prob seizure, prob no seizure)
         '''
-        probs_seizure = []
-        probs_noseizure = []
+        probs_seizure = 0
+        probs_noseizure = 0
         for tree in self.trees:
             (prob_seizure, prob_noseizure) = self.predict_proba(x, tree)
-            probs_seizure.append(prob_seizure)
-            probs_noseizure.append(prob_noseizure)
-        return (np.mean(np.array(probs_seizure)), np.mean(np.array(probs_noseizure)))
+            probs_seizure += prob_seizure
+            probs_noseizure += prob_noseizure
+        return (probs_seizure, probs_noseizure)
 
     def predict_proba(self, x, tree):
         '''
         x is a row of data
         returns (prob of seizure, prob of not seizure)
         '''
+        seizure_weight = 1.0 / tree.num_samples_seizure
+        noseizure_weight = 1.0 / tree.num_samples_noseizure
         while tree is not None:
             if x[tree.feature] <= tree.value:
                 if tree.left is None:
-                    total_samples = tree.num_samples_seizure + tree.num_samples_noseizure
-                    return (float(tree.num_samples_seizure) / float(total_samples), float(tree.num_samples_noseizure) / float(total_samples))
+                    return (float(tree.num_samples_seizure) * seizure_weight, float(tree.num_samples_noseizure) * noseizure_weight)
                 tree = tree.left
             else:
                 if tree.right is None:
-                    total_samples = tree.num_samples_seizure + tree.num_samples_noseizure
-                    return (float(tree.num_samples_seizure) / float(total_samples), float(tree.num_samples_noseizure) / float(total_samples))
+                    return (float(tree.num_samples_seizure) * seizure_weight, float(tree.num_samples_noseizure) * noseizure_weight)
                 tree = tree.right
 
     def perform_split(self, data, feature, split_val):
@@ -153,8 +157,11 @@ class RandomForest:
                 continue
             split_score = 0
             positive_class_count = np.count_nonzero(self.trainY[split] == 1) #seizure
-            split_score += (positive_class_count/len(split)) ** 2
-            split_score += (1.0 - positive_class_count/len(split)) ** 2
+            negative_class_count = np.count_nonzero(self.trainY[split] == -1) 
+            positive_class_weight = 1
+            negative_class_weight = 1
+            split_score += (positive_class_weight * positive_class_count/len(split)) ** 2
+            split_score += (negative_class_weight * negative_class_count/len(split)) ** 2
             gini += float(len(split))/float(num_samples) * (1.0 - split_score) 
         return gini
 
@@ -172,4 +179,5 @@ if __name__ == "__main__":
 
     classifier = RandomForest(50, 50, X_train, Y_train, samples_per_tree=1000)
     classifier.train()
+    print(classifier.score(X_train, Y_train))
     print(classifier.score(X_val, y_val))
