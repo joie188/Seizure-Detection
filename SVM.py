@@ -27,6 +27,7 @@ def train_kernel_svm(X, y, k=None, C=1, gamma=1):
     else:
         K = k
 
+    print("hello")
     P = K.reshape(N, N) * y.reshape(N, 1).dot(y.reshape(1, N))
     q = -np.ones(N)
 
@@ -122,10 +123,12 @@ def plot_decision_boundary(X, Y, scoreFn, contour_values=[-1, 0, 1], title=""):
 
 
 def run_kernel_svm(ker=ker_linear, C=1):
+    print('hi')
     train = pd.read_csv('data/train_data.csv').values 
     X_train = train[:, :-1].copy()
     #X_train = train[:, [1,3,4,5,6,7,10,19,20,21,22,23]].copy()
     y_train = train[:, -1].copy()
+    print('hi')
 
     validate = pd.read_csv('data/val_data.csv').values
     X_val = validate[:, :-1].copy()
@@ -139,17 +142,18 @@ def run_kernel_svm(ker=ker_linear, C=1):
     for C in [1]:
         for gamma in [0.01]:
             alpha, b = train_kernel_svm(X_train, y_train, k=ker, C=C, gamma=gamma)
+            print(alpha, b)
             pred_kernel_svm = get_pred_kernel_svm(alpha, b, X_train, y_train, ker, gamma=gamma)
             print('C', C) 
             print('Gamma', gamma)
             #w = np.sum(np.array([alpha * y_train]).T * X_train, axis = 0)
             #print('W Indices:', np.argsort(abs(w)))
 
-            # preds = np.array([pred_kernel_svm(x) for x in X_train])
-            # print('Training error', (preds * y_train <= 0).mean())
+            preds = np.array([pred_kernel_svm(x) for x in X_train])
+            print('Training error', (preds * y_train <= 0).mean())
 
-            # preds = np.array([pred_kernel_svm(x) for x in X_val])
-            # print('Validation error', (preds * y_val <= 0).mean())
+            preds = np.array([pred_kernel_svm(x) for x in X_val])
+            print('Validation error', (preds * y_val <= 0).mean())
 
             preds = np.array([pred_kernel_svm(x) for x in X_test])
             print('Test error', (preds * y_test <= 0).mean())
