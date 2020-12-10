@@ -43,13 +43,13 @@ class RandomForest:
         else:
             self.features_to_train_on = features_to_train_on
     
-    def build_tree(self, data_indices, features):
-        best_feature, best_val, best_left, best_right = self.best_split(data_indices, features)
+    def build_tree(self, data_indices, features, weights):
+        best_feature, best_val, best_left, best_right = self.best_split(data_indices, features, weights)
         if best_feature is None:
             return None
         root = Node(best_feature, best_val, np.count_nonzero(self.trainY[data_indices] == 1), len(data_indices) - np.count_nonzero(self.trainY[data_indices] == 1))
-        root.left = self.build_tree(best_left, features)
-        root.right = self.build_tree(best_right, features)
+        root.left = self.build_tree(best_left, features, weights)
+        root.right = self.build_tree(best_right, features, weights)
         return root
 
     def train(self):
@@ -61,7 +61,10 @@ class RandomForest:
             #randomly choose features to consider
             features = np.random.choice(self.features_to_train_on, size=self.features_per_tree, replace=False)
 
-            tree = self.build_tree(samples_indices, features)
+            positive_class_count = np.count_nonzero(self.trainY[samples_indices] == 1)
+            negative_class_count = self.samples_per_tree - positive_class_count
+
+            tree = self.build_tree(samples_indices, features, (1.0 / positive_class_count, 1.0 / negative_class_count))
 
             self.trees.append(tree)
 
@@ -72,8 +75,6 @@ class RandomForest:
         predictions = np.zeros(testX.shape[0])
         for i in range(testX.shape[0]):
             predict_proba = self.predict_proba_ensemble(testX[i])
-            seizure_weight = 1 / float(self.pos_size)
-            noseizure_weight = 1 / float(self.neg_size)
             if predict_proba[0] > predict_proba[1]:
                 predictions[i] = 1
             else:
@@ -97,16 +98,16 @@ class RandomForest:
         x is a row of data
         returns (prob of seizure, prob of not seizure)
         '''
-        seizure_weight = 1.0 / tree.num_samples_seizure
-        noseizure_weight = 1.0 / tree.num_samples_noseizure
+        #seizure_weight = 1.0 / tree.num_samples_seizure
+        #noseizure_weight = 1.0 / tree.num_samples_noseizure
         while tree is not None:
             if x[tree.feature] <= tree.value:
                 if tree.left is None:
-                    return (float(tree.num_samples_seizure) * seizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) * noseizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure))
+                    return (float(tree.num_samples_seizure) / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) / (tree.num_samples_seizure + tree.num_samples_noseizure))
                 tree = tree.left
             else:
                 if tree.right is None:
-                    return (float(tree.num_samples_seizure) * seizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) * noseizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure))
+                    return (float(tree.num_samples_seizure) / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) / (tree.num_samples_seizure + tree.num_samples_noseizure))
                 tree = tree.right
 
     def perform_split(self, data, feature, split_val):
@@ -119,17 +120,17 @@ class RandomForest:
                 right.append(row_index)
         return left, right
     
-    def best_split(self, data, features):
+    def best_split(self, data, features, weights):
         best_score = 2**31-1
         best_feature, best_val, best_left, best_right = None, None, None, None
         for index in features:
-            feature, val, left, right, score = self.find_split(data, index)
+            feature, val, left, right, score = self.find_split(data, index, weights)
             if score < best_score:
                 best_score = score
                 best_feature, best_val, best_left, best_right = feature, val, left, right
         return best_feature, best_val, best_left, best_right
 
-    def find_split(self, data, feature):
+    def find_split(self, data, feature, weights):
         best_score = 2**31-1
         left = None
         right = None
@@ -139,7 +140,7 @@ class RandomForest:
             left_temp, right_temp = self.perform_split(data, feature, split_val)
             if len(left_temp) < self.min_samples_leaf or len(right_temp) < self.min_samples_leaf:
                 continue
-            split_gini_score = self.gini_score([left_temp, right_temp])
+            split_gini_score = self.gini_score([left_temp, right_temp], weights)
             if split_gini_score < best_score:
                 best_score = split_gini_score
                 left = left_temp
@@ -147,23 +148,25 @@ class RandomForest:
                 val = split_val
         return feature, val, left, right, best_score
 
-    def gini_score(self, splits):
+    def gini_score(self, splits, weights):
         '''
         splits is list of lists where each list has indices into trainX of rows in that group
         '''
         gini = 0
-        num_samples = sum([len(split) for split in splits])
+        all_samples = [index for split in splits for index in split]
+        positive_class_weight = weights[0]
+        negative_class_weight = weights[1]
+        t_p = positive_class_weight * np.count_nonzero(self.trainY[all_samples] == 1) + negative_class_weight * np.count_nonzero(self.trainY[all_samples] == -1)
         for split in splits:
             if len(split) == 0:
                 continue
             split_score = 0
             positive_class_count = np.count_nonzero(self.trainY[split] == 1) #seizure
             negative_class_count = np.count_nonzero(self.trainY[split] == -1) 
-            positive_class_weight = 1
-            negative_class_weight = 1
-            split_score += (positive_class_weight * positive_class_count/len(split)) ** 2
-            split_score += (negative_class_weight * negative_class_count/len(split)) ** 2
-            gini += float(len(split))/float(num_samples) * (1.0 - split_score) 
+            t_c = positive_class_weight * positive_class_count + negative_class_weight * negative_class_count
+            split_score += (positive_class_weight * positive_class_count/t_c) ** 2
+            split_score += (negative_class_weight * negative_class_count/t_c) ** 2
+            gini += t_c/t_p * (1.0 - split_score) 
         return gini
 
     def score(self, testX, testY):
@@ -179,14 +182,14 @@ if __name__ == "__main__":
     y_val = validate[:, -1].copy()
 
     num_trees = [10, 50, 100]
-    num_samples_leaf = [10, 25, 50]
+    num_samples_leaf = [10, 50, 100]
 
-    for num_tree in [10]:
+    for num_tree in num_trees:
         for num_sample in num_samples_leaf:
-            #classifier = RandomForestClassifier(n_estimators=num_tree, min_samples_leaf=num_sample, max_samples=1000)
-            #classifier.fit(X_train, Y_train)
-            classifier = RandomForest(num_tree, num_sample, X_train, Y_train, samples_per_tree=1000)
-            classifier.train()
+            classifier = RandomForestClassifier(n_estimators=num_tree, min_samples_leaf=num_sample, max_samples=500,class_weight="balanced_subsample")
+            classifier.fit(X_train, Y_train)
+            #classifier = RandomForest(num_tree, num_sample, X_train, Y_train, samples_per_tree=500)
+            #classifier.train()
             print(num_tree, num_sample)
             print(classifier.score(X_train, Y_train))
             print(classifier.score(X_val, y_val))
