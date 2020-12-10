@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import math
 import random
+from sklearn.ensemble import RandomForestClassifier
 
 class Node:
     def __init__(self, feature, value, num_samples_seizure, num_samples_noseizure):
@@ -101,11 +102,11 @@ class RandomForest:
         while tree is not None:
             if x[tree.feature] <= tree.value:
                 if tree.left is None:
-                    return (float(tree.num_samples_seizure) * seizure_weight, float(tree.num_samples_noseizure) * noseizure_weight)
+                    return (float(tree.num_samples_seizure) * seizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) * noseizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure))
                 tree = tree.left
             else:
                 if tree.right is None:
-                    return (float(tree.num_samples_seizure) * seizure_weight, float(tree.num_samples_noseizure) * noseizure_weight)
+                    return (float(tree.num_samples_seizure) * seizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure), float(tree.num_samples_noseizure) * noseizure_weight / (tree.num_samples_seizure + tree.num_samples_noseizure))
                 tree = tree.right
 
     def perform_split(self, data, feature, split_val):
@@ -177,7 +178,38 @@ if __name__ == "__main__":
     X_val = validate[:, :-1].copy()
     y_val = validate[:, -1].copy()
 
-    classifier = RandomForest(50, 50, X_train, Y_train, samples_per_tree=1000)
-    classifier.train()
-    print(classifier.score(X_train, Y_train))
-    print(classifier.score(X_val, y_val))
+    num_trees = [10, 50, 100]
+    num_samples_leaf = [10, 25, 50]
+
+    for num_tree in [10]:
+        for num_sample in num_samples_leaf:
+            #classifier = RandomForestClassifier(n_estimators=num_tree, min_samples_leaf=num_sample, max_samples=1000)
+            #classifier.fit(X_train, Y_train)
+            classifier = RandomForest(num_tree, num_sample, X_train, Y_train, samples_per_tree=1000)
+            classifier.train()
+            print(num_tree, num_sample)
+            print(classifier.score(X_train, Y_train))
+            print(classifier.score(X_val, y_val))
+
+    # def traverse_tree(tree):
+    #     if tree is not None:
+    #         print(tree.feature)
+    #         traverse_tree(tree.left)
+    #         traverse_tree(tree.right)
+
+    # classifier = RandomForest(10, 50, X_train, Y_train, samples_per_tree=1000)
+    # classifier.train()
+    # for tree in classifier.trees:
+    #     print('new tree')
+    #     traverse_tree(tree)
+
+    # for num_tree in [50, 100]:
+    #     num_samples_leaf = [10, 25, 50]
+    #     if num_tree == 50:
+    #         num_samples_leaf = [50]
+    #     for num_samp in num_samples_leaf:
+    #         classifier = RandomForest(num_tree, num_samp, X_train, Y_train, samples_per_tree=1000)
+    #         classifier.train()
+    #         print(num_tree, num_samp)
+    #         print("Train: ", classifier.score(X_train, Y_train))
+    #         print("Val: ", classifier.score(X_val, y_val))
